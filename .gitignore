@@ -1,1 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.pytest_tmp/
+.ruff_cache/
 .idea/
+.env
+
+data/name_dept.csv
+data/name_region.csv
+data/names.csv
