@@ -27,7 +27,7 @@ def prepare(data_dir: Path, validate_only: bool = False) -> dict:
 
     for name, spec in SOURCES.items():
         path = data_dir / f"{name}.csv"
-        df = pd.read_csv(path, sep=";", encoding="utf-8", dtype={"reg": "string", "dpt": "string", "prenom": "string"}, low_memory=False)
+        df = pd.read_csv(path, sep=";", encoding="utf-8", dtype={"reg": "string", "dpt": "string", "prenom": "string"}, keep_default_na=False, na_values=[""], low_memory=False)
         if list(df.columns) != spec["columns"]:
             raise ValueError(f"{name}: unexpected columns {list(df.columns)}")
         for col in ("sexe", "periode", "valeur", "rang"):
