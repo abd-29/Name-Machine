@@ -132,3 +132,18 @@ def test_trend_minimum_count(data_path):
         2000, 2002, 1, min_start_count=90, path=data_path
     )
     assert result.is_empty()
+
+
+@pytest.mark.parametrize("direction", ["rising", "falling"])
+def test_trends_with_int16_counts(data_path, direction):
+    downcast_path = data_path.with_name("counts_int16.parquet")
+    pl.read_parquet(data_path).with_columns(
+        (10 * pl.col("valeur")).cast(pl.Int16),
+    ).write_parquet(downcast_path)
+
+    trends = get_trending_names(2000, 2002, 1, direction=direction, path=downcast_path)
+
+    if direction == "rising":
+        assert trends["change_pct"].to_list() == [pytest.approx(87.5)]
+    else:
+        assert trends["change_pct"].to_list() == [pytest.approx(-40.0), pytest.approx(-50.0)]

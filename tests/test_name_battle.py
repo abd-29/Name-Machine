@@ -117,3 +117,38 @@ def test_invalid_year(data_path):
 def test_year_outside_timeline(timeline):
     with pytest.raises(ValueError):
         compare_year(timeline, 1990)
+
+
+def test_prepared_integer_types(data_path):
+    """Prepared years use Int16, while the generated timeline uses Int64."""
+    data = pl.read_parquet(data_path).with_columns(
+        pl.col("periode").cast(pl.Int16),
+        pl.col("sexe").cast(pl.Int8),
+    )
+    downcast_path = data_path.with_name("downcast.parquet")
+    data.write_parquet(downcast_path)
+
+    result = get_battle_timeline("GABRIEL", 1, "LOUISE", 2, 2000, 2002, downcast_path)
+
+    assert result.schema["periode"] == pl.Int64
+    assert result["value_1"].to_list() == [100, None, 150]
+    assert compare_period(result)["winner"] == 1
+
+
+@pytest.mark.parametrize("sex1, sex2", [(0, 1), (1, 3)])
+def test_invalid_sex(data_path, sex1, sex2):
+    with pytest.raises(ValueError, match="sex"):
+        get_battle_timeline("GABRIEL", sex1, "LOUISE", sex2, 2000, 2002, data_path)
+
+
+def test_relative_popularity_with_int16_counts(data_path):
+    downcast_path = data_path.with_name("counts_int16.parquet")
+    pl.read_parquet(data_path).with_columns(
+        (10 * pl.col("valeur")).cast(pl.Int16),
+    ).write_parquet(downcast_path)
+
+    timeline = get_battle_timeline("GABRIEL", 1, "LOUISE", 2, 2000, 2002, downcast_path)
+
+    assert compare_year(timeline, 2000, "share")["score_1"] == pytest.approx(100 / 3)
+    assert compare_year(timeline, 2000, "share")["score_2"] == pytest.approx(80.0)
+    assert compare_period(timeline, "share")["winner"] == 2

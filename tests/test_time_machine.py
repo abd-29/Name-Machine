@@ -120,3 +120,49 @@ def test_relative_history(data_path):
     row = result.filter(pl.col("periode") == 2002).row(0, named=True)
     assert row["year_total"] == 200
     assert row["share_pct"] == pytest.approx(75.0)
+
+
+def test_relative_timeline_with_prepared_integer_types(data_path):
+    data = pl.read_parquet(data_path).with_columns(
+        pl.col("periode").cast(pl.Int16),
+        pl.col("sexe").cast(pl.Int8),
+    )
+    downcast_path = data_path.with_name("downcast.parquet")
+    data.write_parquet(downcast_path)
+
+    timeline = get_timeline("GABRIEL", 1, 2000, 2003, downcast_path)
+    relative = get_relative_history(timeline, downcast_path)
+    assert relative["share_pct"].to_list() == [100.0, None, 75.0, 100.0]
+
+
+def test_history_and_battle_reuse_national_read(data_path, monkeypatch):
+    from src.analytics._data import annual_totals, national_data
+    from src.analytics.name_battle import get_battle_timeline
+
+    annual_totals.cache_clear()
+    national_data.cache_clear()
+    original_read = pl.read_parquet
+    reads = []
+
+    def count_read(path):
+        reads.append(path)
+        return original_read(path)
+
+    monkeypatch.setattr(pl, "read_parquet", count_read)
+    history = get_history("GABRIEL", 1, data_path)
+    get_relative_history(history, data_path)
+    get_battle_timeline("GABRIEL", 1, "LOUISE", 2, 2000, 2003, data_path)
+
+    assert reads == [data_path]
+
+
+def test_relative_history_with_int16_counts(data_path):
+    downcast_path = data_path.with_name("counts_int16.parquet")
+    pl.read_parquet(data_path).with_columns(
+        (10 * pl.col("valeur")).cast(pl.Int16),
+    ).write_parquet(downcast_path)
+
+    history = get_history("GABRIEL", 1, downcast_path)
+    relative = get_relative_history(history, downcast_path)
+
+    assert relative["share_pct"].to_list() == [100.0, 75.0, 100.0]

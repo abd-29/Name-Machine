@@ -156,3 +156,23 @@ def test_sex_separation(options):
 
     assert bretagne["valeur"] == 5
     assert bretagne["share_pct"] == pytest.approx(100.0)
+
+
+def test_relative_popularity_with_prepared_integer_types(sample_data):
+    """Multiplying published Int16 counts by 100 must not overflow."""
+    path, reference = sample_data
+    data = pl.read_parquet(path).with_columns(
+        (pl.col("valeur") * 10).cast(pl.Int16),
+        pl.col("periode").cast(pl.Int16),
+        pl.col("sexe").cast(pl.Int8),
+    )
+    downcast_path = path.with_name("downcast.parquet")
+    data.write_parquet(downcast_path)
+    options = {"level": "region", "path": downcast_path, "reference_path": reference}
+
+    distribution = get_distribution("LÉO", 1, 2020, **options)
+    bretagne = distribution.filter(pl.col("reg") == "53").row(0, named=True)
+    assert bretagne["share_pct"] == pytest.approx(50.0)
+
+    history = get_local_history("LÉO", 1, "53", start=2020, end=2022, **options)
+    assert history["share_pct"].to_list() == [pytest.approx(50.0), None, pytest.approx(200 / 3)]

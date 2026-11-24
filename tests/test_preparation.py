@@ -1,4 +1,3 @@
-
 """Validate Sprint 1 datasets with pytest."""
 
 import csv
@@ -8,7 +7,6 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-
 ROOT = Path(__file__).resolve().parents[1]
 DATA = ROOT / "data"
 PROCESSED = DATA / "processed"
@@ -16,10 +14,10 @@ GEO = DATA / "geo"
 
 DATASETS = {
     "names": {
-    "keys": ["sexe", "prenom", "periode"],
-    "rows": 724645,
-    "total_2025": 589485,
-    "missing_names": 0,
+        "keys": ["sexe", "prenom", "periode"],
+        "rows": 724645,
+        "total_2025": 589485,
+        "missing_names": 0,
     },
     "name_region": {
         "keys": ["sexe", "prenom", "periode", "reg"],
@@ -51,9 +49,7 @@ def datasets():
             },
         )
 
-        prepared = pl.read_parquet(
-            PROCESSED / f"{name}.parquet"
-        )
+        prepared = pl.read_parquet(PROCESSED / f"{name}.parquet")
 
         result[name] = (source, prepared)
 
@@ -100,9 +96,7 @@ def test_missing_values(datasets, name):
     source, prepared = datasets[name]
 
     assert source.null_count().equals(prepared.null_count())
-    assert prepared["prenom"].null_count() == (
-        DATASETS[name]["missing_names"]
-    )
+    assert prepared["prenom"].null_count() == (DATASETS[name]["missing_names"])
 
 
 @pytest.mark.parametrize("name", DATASETS)
@@ -111,11 +105,7 @@ def test_primary_keys(datasets, name):
 
     keys = DATASETS[name]["keys"]
 
-    duplicates = (
-        prepared.group_by(keys)
-        .len()
-        .filter(pl.col("len") > 1)
-    )
+    duplicates = prepared.group_by(keys).len().filter(pl.col("len") > 1)
 
     assert duplicates.is_empty()
 
@@ -169,11 +159,7 @@ def test_aggregations(datasets, name):
 def test_2025_totals(datasets, name):
     _, prepared = datasets[name]
 
-    total = (
-        prepared.filter(pl.col("periode") == 2025)
-        .get_column("valeur")
-        .sum()
-    )
+    total = prepared.filter(pl.col("periode") == 2025).get_column("valeur").sum()
 
     assert total == DATASETS[name]["total_2025"]
 
@@ -185,19 +171,14 @@ def test_2025_totals(datasets, name):
         ("departements", "dpt", 101),
     ],
 )
-def test_geographic_references(
-    geography, name, code_column, expected
-):
+def test_geographic_references(geography, name, code_column, expected):
     rows = geography[name]
     codes = [row[code_column] for row in rows]
 
     assert len(rows) == expected
     assert len(codes) == len(set(codes))
 
-    name_column = (
-        "nom_region" if name == "regions"
-        else "nom_departement"
-    )
+    name_column = "nom_region" if name == "regions" else "nom_departement"
 
     assert all(row[name_column].strip() for row in rows)
 
@@ -211,9 +192,7 @@ def test_geographic_references(
 )
 def test_geojson(geography, name, code_column):
     geojson = geography[f"{name}_geojson"]
-    reference_codes = {
-        row[code_column] for row in geography[name]
-    }
+    reference_codes = {row[code_column] for row in geography[name]}
 
     assert geojson["type"] == "FeatureCollection"
 
@@ -222,10 +201,7 @@ def test_geojson(geography, name, code_column):
     for feature in geojson["features"]:
         assert feature["type"] == "Feature"
 
-        code = str(
-            feature.get("id")
-            or feature.get("properties", {}).get("code", "")
-        )
+        code = str(feature.get("id") or feature.get("properties", {}).get("code", ""))
 
         assert code
         assert feature["geometry"]["type"] in (
@@ -244,9 +220,7 @@ def test_region_codes(datasets, geography):
     _, prepared = datasets["name_region"]
 
     source_codes = set(prepared["reg"].unique().to_list())
-    reference_codes = {
-        row["reg"] for row in geography["regions"]
-    }
+    reference_codes = {row["reg"] for row in geography["regions"]}
 
     assert source_codes == reference_codes
 
@@ -255,17 +229,30 @@ def test_department_codes(datasets, geography):
     _, prepared = datasets["name_dept"]
 
     source_codes = set(prepared["dpt"].unique().to_list())
-    reference_codes = {
-        row["dpt"] for row in geography["departements"]
-    }
+    reference_codes = {row["dpt"] for row in geography["departements"]}
 
     assert source_codes == reference_codes
 
 
 def test_department_region_mapping(geography):
-    region_codes = {
-        row["reg"] for row in geography["regions"]
-    }
+    region_codes = {row["reg"] for row in geography["regions"]}
 
     for department in geography["departements"]:
         assert department["reg"] in region_codes
+
+
+def test_preparation_preserves_literal_na(tmp_path):
+    from src.cleaning import prepare
+
+    for name, code in [("names", None), ("name_region", "reg"), ("name_dept", "dpt")]:
+        header = "sexe;prenom;periode;" + (f"{code};" if code else "") + "valeur;rang\n"
+        row = "2;NA;2003;" + ("01;" if code else "") + "5;1\n"
+        (tmp_path / f"{name}.csv").write_text(header + row, encoding="utf-8")
+
+    summary = prepare(tmp_path)
+
+    for name in DATASETS:
+        prepared = pl.read_parquet(tmp_path / "processed" / f"{name}.parquet")
+        assert prepared["prenom"].to_list() == ["NA"]
+        assert summary[name]["missing_names"] == 0
+        assert summary[name]["annual_2025"] is None
