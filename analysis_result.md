@@ -1,7 +1,7 @@
 # Name Machine - Analyse exploratoire des données
 
 **Périmètre :** Données françaises sur les prénoms, aux niveaux national, régional et départemental (1900–2025).  
-**Source :** INSEE — Fichier des prénoms, édition 2025.  
+**Source :** INSEE - Fichier des prénoms, édition 2025.  
 **Fichiers analysés :** `names.csv`, `name_region.csv`, `name_dept.csv`.
 
 ## Dictionnaire des variables
@@ -28,7 +28,7 @@ Les fichiers présentent les effectifs de prénoms attribués à la naissance, v
 
 L'analyse porte sur **6 622 949 observations** réparties entre les trois fichiers INSEE, couvrant la période 1900–2025.
 
-Les contrôles n'ont révélé aucun doublon sur les clés définies ni aucune valeur nulle ou négative dans les effectifs et les rangs. Une seule valeur manquante a été identifiée dans la variable `prenom` du fichier national.
+Les contrôles n'ont révélé aucun doublon sur les clés définies, aucun prénom manquant ni aucune valeur nulle ou négative dans les effectifs et les rangs.
 
 Trois points nécessitent une attention particulière :
 
@@ -41,13 +41,13 @@ Trois points nécessitent une attention particulière :
 | Indicateur | National | Régional | Départemental |
 |---|---:|---:|---:|
 | Observations | 724 645 | 1 928 764 | 3 969 540 |
-| Prénoms distincts | 49 162 | 27 213 | 17 671 |
+| Prénoms distincts | 49 163 | 27 213 | 17 671 |
 | Années distinctes | 126 | 126 | 126 |
 | Première année | 1900 | 1900 | 1900 |
 | Dernière année | 2025 | 2025 | 2025 |
 | Zones distinctes | — | 18 | 101 |
 | Doublons sur les clés | 0 | 0 | 0 |
-| Prénoms manquants | 1 | 0 | 0 |
+| Prénoms manquants | 0 | 0 | 0 |
 
 Les 126 années sont représentées dans chacun des trois fichiers, mais la couverture temporelle n'est pas uniforme selon les territoires.
 
@@ -66,7 +66,7 @@ Les vérifications ont porté sur les valeurs manquantes, les types de données,
 | Valeurs nulles ou négatives dans `valeur` | Aucune |
 | Valeurs nulles ou négatives dans `rang` | Aucune |
 | Doublons sur les clés | Aucun |
-| Prénoms manquants | 1 observation nationale |
+| Prénoms manquants | Aucun |
 
 Les clés d'unicité utilisées sont :
 
@@ -74,16 +74,17 @@ Les clés d'unicité utilisées sont :
 - Régional : `(sexe, prenom, periode, reg)`.
 - Départemental : `(sexe, prenom, periode, dpt)`.
 
-**Anomalie identifiée :** une observation du fichier national présente un prénom manquant, avec les caractéristiques suivantes :
+**Prénom textuel `NA` :** cette valeur valide du fichier national avait été interprétée comme manquante par la lecture CSV par défaut de pandas. L'import conserve désormais cette chaîne :
 
 | Champ | Valeur |
 |---|---:|
+| `prenom` | `NA` |
 | `sexe` | 2 |
 | `periode` | 2003 |
 | `valeur` | 5 |
 | `rang` | 5 405 |
 
-Cette observation sera exclue des recherches par prénom, tout en restant comptabilisée dans les contrôles de volume des données sources.
+Cette observation est conservée dans les recherches, les statistiques et les contrôles de volume. Seuls les champs réellement vides sont traités comme manquants à l'import.
 
 Les variables `reg` et `dpt` devront être importées comme des chaînes de caractères afin de préserver les codes géographiques, notamment `01`, `06`, `2A`, `2B` et `976`.
 
@@ -158,7 +159,7 @@ Les opérations retenues sont les suivantes :
 
 1. Conserver les trois fichiers CSV sources sans modification.
 2. Vérifier les schémas, les types et les clés à chaque chargement.
-3. Traiter la valeur manquante de `prenom` pour les recherches nominatives.
+3. Préserver les prénoms textuels, notamment `NA`, sans les convertir en valeurs manquantes.
 4. Maintenir les codes géographiques sous forme de chaînes.
 5. Ajouter les noms et contours des régions et départements.
 6. Convertir les fichiers en Parquet pour optimiser leur exploitation dans Dash.

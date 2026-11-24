@@ -4,6 +4,7 @@ ROOT_DIR = Path(__file__).resolve().parent
 DATA_DIR = ROOT_DIR / "data"
 PROCESSED_DIR = DATA_DIR / "processed"
 GEO_DIR = DATA_DIR / "geo"
+ASSETS_DIR = ROOT_DIR / "assets"
 
 NAMES_PARQUET = PROCESSED_DIR / "names.parquet"
 REGIONS_PARQUET = PROCESSED_DIR / "name_region.parquet"

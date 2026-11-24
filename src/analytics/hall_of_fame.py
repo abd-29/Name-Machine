@@ -6,6 +6,7 @@ from pathlib import Path
 import polars as pl
 
 from config import MAX_YEAR, MIN_YEAR, NAMES_PARQUET
+from src.analytics._data import national_data
 
 
 def _validate_sex(sex: int):
@@ -26,7 +27,7 @@ def _validate_limit(limit: int):
 def _data(path: Path, sex: int, start: int, end: int) -> pl.LazyFrame:
     _validate_sex(sex)
     _validate_years(start, end)
-    return pl.scan_parquet(path).filter(
+    return national_data(path).lazy().filter(
         (pl.col("sexe") == sex)
         & pl.col("periode").is_between(start, end)
     )
@@ -126,7 +127,7 @@ def get_trending_names(
         .with_columns(
             (pl.col("end_count") - pl.col("start_count")).alias("change"),
             (
-                100
+                100.0
                 * (pl.col("end_count") - pl.col("start_count"))
                 / pl.col("start_count")
             ).alias("change_pct"),

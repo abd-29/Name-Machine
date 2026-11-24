@@ -105,7 +105,7 @@ def get_distribution(
         .join(selected.collect(), on=code, how="left")
         .join(totals.collect(), on=code, how="left")
         .with_columns(
-            (100 * pl.col("valeur") / pl.col("total_published")).alias("share_pct"),
+            (100.0 * pl.col("valeur") / pl.col("total_published")).alias("share_pct"),
             pl.col("valeur").is_not_null().alias("published"),
         )
         .sort(code)
@@ -178,7 +178,7 @@ def get_local_history(
             how="left",
         )
         .with_columns(
-            (100 * pl.col("valeur") / pl.col("total_published")).alias("share_pct"),
+            (100.0 * pl.col("valeur") / pl.col("total_published")).alias("share_pct"),
             pl.col("valeur").is_not_null().alias("published"),
         )
         .sort("periode")

@@ -1,4 +1,5 @@
-"""Build reference geographic files. """
+"""Build reference geographic files."""
+
 from __future__ import annotations
 
 import csv
@@ -7,9 +8,16 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-ROOT = Path(__file__).resolve().parents[1]
-GEO = ROOT / "data" / "geo"
-DATA = ROOT / "data"
+from config import (
+    DATA_DIR,
+    DEPARTMENTS_CSV,
+    DEPARTMENTS_GEOJSON,
+    GEO_DIR,
+    REGIONS_CSV,
+    REGIONS_GEOJSON,
+    ROOT_DIR,
+)
+
 SOURCES = {
     "regions": "https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/regions-avec-outre-mer.geojson",
     "departements": "https://raw.githubusercontent.com/gregoiredavid/france-geojson/master/departements-avec-outre-mer.geojson",
@@ -35,17 +43,26 @@ def normalize_geojson(obj: object, level: str) -> dict:
         code, name = str(p.get("code", "")).strip(), p.get("nom") or p.get("name")
         if not code or not name or not f.get("geometry"):
             raise ValueError(f"Incomplete geographic feature: {p}")
-        features.append({"type": "Feature", "id": code, "properties": {"code": code, "nom": str(name)}, "geometry": f["geometry"]})
+        features.append(
+            {
+                "type": "Feature",
+                "id": code,
+                "properties": {"code": code, "nom": str(name)},
+                "geometry": f["geometry"],
+            }
+        )
     codes = [f["id"] for f in features]
     expected = EXPECTED_REGIONS if level == "regions" else EXPECTED_DEPTS
     if len(features) != expected or len(set(codes)) != expected:
-        raise ValueError(f"{level}: expected {expected} unique features, got {len(features)} / {len(set(codes))}")
+        raise ValueError(
+            f"{level}: expected {expected} unique features, got {len(features)} / {len(set(codes))}"
+        )
     return {"type": "FeatureCollection", "features": sorted(features, key=lambda f: f["id"])}
 
 
 def insee_codes(file: Path, col: str) -> set[str]:
     if not file.is_file():
-        raise FileNotFoundError(f"Place {file.name} in {DATA}/ or update the path")
+        raise FileNotFoundError(f"Place {file.name} in {DATA_DIR}/ or update the path")
     with file.open(encoding="utf-8-sig", newline="") as fp:
         reader = csv.DictReader(fp, delimiter=";")
         if col not in (reader.fieldnames or []):
@@ -61,8 +78,8 @@ def write_csv(file: Path, cols: list[str], rows: list[dict]) -> None:
 
 
 def main() -> None:
-    regions_source = DATA / "name_region.csv"
-    depts_source = DATA / "name_dept.csv"
+    regions_source = DATA_DIR / "name_region.csv"
+    depts_source = DATA_DIR / "name_dept.csv"
     expected_region_codes = insee_codes(regions_source, "reg")
     expected_dept_codes = insee_codes(depts_source, "dpt")
     if len(expected_region_codes) != EXPECTED_REGIONS or len(expected_dept_codes) != EXPECTED_DEPTS:
@@ -88,16 +105,28 @@ def main() -> None:
         ("departments geometries", expected_dept_codes, {f["id"] for f in geo_dep["features"]}),
     ]:
         if expected != actual:
-            raise ValueError(f"Code mismatch in {label}: missing={sorted(expected-actual)}, excess={sorted(actual-expected)}")
-    bad_parents = sorted(k for k, v in depts.items() if str(v["codeRegion"]) not in expected_region_codes)
+            raise ValueError(
+                f"Code mismatch in {label}: missing={sorted(expected - actual)}, "
+                f"excess={sorted(actual - expected)}"
+            )
+    bad_parents = sorted(
+        k for k, v in depts.items() if str(v["codeRegion"]) not in expected_region_codes
+    )
     if bad_parents:
         raise ValueError(f"Unknown region association for departments: {bad_parents}")
 
-    reg_rows = [{"reg": code, "nom_region": regions[code]["nom"]} for code in sorted(expected_region_codes)]
-    dept_rows = [{"dpt": code, "nom_departement": depts[code]["nom"],
-                  "reg": str(depts[code]["codeRegion"]),
-                  "nom_region": regions[str(depts[code]["codeRegion"])]["nom"]}
-                 for code in sorted(expected_dept_codes)]
+    reg_rows = [
+        {"reg": code, "nom_region": regions[code]["nom"]} for code in sorted(expected_region_codes)
+    ]
+    dept_rows = [
+        {
+            "dpt": code,
+            "nom_departement": depts[code]["nom"],
+            "reg": str(depts[code]["codeRegion"]),
+            "nom_region": regions[str(depts[code]["codeRegion"])]["nom"],
+        }
+        for code in sorted(expected_dept_codes)
+    ]
 
     # Prefer up-to-date names from API Geo, retain geometries unchanged.
     for f in geo_reg["features"]:
@@ -105,14 +134,19 @@ def main() -> None:
     for f in geo_dep["features"]:
         f["properties"]["nom"] = depts[f["id"]]["nom"]
 
-    GEO.mkdir(parents=True, exist_ok=True)
-    write_csv(GEO / "regions.csv", ["reg", "nom_region"], reg_rows)
-    write_csv(GEO / "departements.csv", ["dpt", "nom_departement", "reg", "nom_region"], dept_rows)
-    for name, obj in [("regions", geo_reg), ("departements", geo_dep)]:
-        (GEO / f"{name}.geojson").write_text(json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    print(f"OK: {len(reg_rows)} regions and {len(dept_rows)} departments validated against INSEE CSV files")
-    for f in sorted(GEO.iterdir()):
-        print(f"  {f.relative_to(ROOT)} ({f.stat().st_size:,} bytes)")
+    GEO_DIR.mkdir(parents=True, exist_ok=True)
+    write_csv(REGIONS_CSV, ["reg", "nom_region"], reg_rows)
+    write_csv(DEPARTMENTS_CSV, ["dpt", "nom_departement", "reg", "nom_region"], dept_rows)
+    for target, obj in [(REGIONS_GEOJSON, geo_reg), (DEPARTMENTS_GEOJSON, geo_dep)]:
+        target.write_text(
+            json.dumps(obj, ensure_ascii=False, separators=(",", ":")), encoding="utf-8"
+        )
+    print(
+        f"OK: {len(reg_rows)} regions and {len(dept_rows)} departments "
+        "validated against INSEE CSV files"
+    )
+    for f in sorted(GEO_DIR.iterdir()):
+        print(f"  {f.relative_to(ROOT_DIR)} ({f.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":

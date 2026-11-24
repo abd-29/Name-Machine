@@ -1,19 +1,29 @@
-from pathlib import Path
 import argparse
 import json
+from pathlib import Path
 
 import pandas as pd
 
+from config import DATA_DIR, MAX_YEAR, MIN_YEAR
+
 SOURCES = {
-    "names": {"keys": ["sexe", "prenom", "periode"], "columns": ["sexe", "prenom", "periode", "valeur", "rang"]},
-    "name_region": {"keys": ["sexe", "prenom", "periode", "reg"], "columns": ["sexe", "prenom", "periode", "reg", "valeur", "rang"]},
-    "name_dept": {"keys": ["sexe", "prenom", "periode", "dpt"], "columns": ["sexe", "prenom", "periode", "dpt", "valeur", "rang"]},
+    "names": {
+        "keys": ["sexe", "prenom", "periode"],
+        "columns": ["sexe", "prenom", "periode", "valeur", "rang"],
+    },
+    "name_region": {
+        "keys": ["sexe", "prenom", "periode", "reg"],
+        "columns": ["sexe", "prenom", "periode", "reg", "valeur", "rang"],
+    },
+    "name_dept": {
+        "keys": ["sexe", "prenom", "periode", "dpt"],
+        "columns": ["sexe", "prenom", "periode", "dpt", "valeur", "rang"],
+    },
 }
 
 
 def get_data_dir() -> Path:
-    script = Path(__file__).resolve()
-    candidates = [Path.cwd(), Path.cwd() / "data", script.parent, script.parent.parent / "data"]
+    candidates = [DATA_DIR, Path.cwd(), Path.cwd() / "data"]
     for candidate in candidates:
         if all((candidate / f"{name}.csv").is_file() for name in SOURCES):
             return candidate
@@ -27,14 +37,22 @@ def prepare(data_dir: Path, validate_only: bool = False) -> dict:
 
     for name, spec in SOURCES.items():
         path = data_dir / f"{name}.csv"
-        df = pd.read_csv(path, sep=";", encoding="utf-8", dtype={"reg": "string", "dpt": "string", "prenom": "string"}, keep_default_na=False, na_values=[""], low_memory=False)
+        df = pd.read_csv(
+            path,
+            sep=";",
+            encoding="utf-8",
+            dtype={"reg": "string", "dpt": "string", "prenom": "string"},
+            keep_default_na=False,
+            na_values=[""],
+            low_memory=False,
+        )
         if list(df.columns) != spec["columns"]:
             raise ValueError(f"{name}: unexpected columns {list(df.columns)}")
         for col in ("sexe", "periode", "valeur", "rang"):
             df[col] = pd.to_numeric(df[col], errors="raise", downcast="integer")
         if not df["sexe"].isin([1, 2]).all():
             raise ValueError(f"{name}: unexpected sex code")
-        if not df["periode"].between(1900, 2025).all():
+        if not df["periode"].between(MIN_YEAR, MAX_YEAR).all():
             raise ValueError(f"{name}: year out of range")
         if df[["sexe", "periode", "valeur", "rang"]].isna().any().any():
             raise ValueError(f"{name}: missing numeric value")
@@ -59,7 +77,7 @@ def prepare(data_dir: Path, validate_only: bool = False) -> dict:
             "duplicates": duplicate_count,
             "all_counts_multiples_of_5": bool((df["valeur"] % 5 == 0).all()),
             "total_published_counts": int(df["valeur"].sum()),
-            "annual_2025": int(annual.loc[2025]),
+            "annual_2025": int(annual.loc[2025]) if 2025 in annual.index else None,
         }
         if "reg" in df:
             summary[name]["territories"] = int(df["reg"].nunique())
@@ -81,6 +99,12 @@ def prepare(data_dir: Path, validate_only: bool = False) -> dict:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--validate-only", action="store_true", help="Audit CSVs without creating Parquet files")
+    parser.add_argument(
+        "--validate-only", action="store_true", help="Audit CSVs without creating Parquet files"
+    )
     args = parser.parse_args()
-    print(json.dumps(prepare(get_data_dir(), validate_only=args.validate_only), indent=2, ensure_ascii=False))
+    print(
+        json.dumps(
+            prepare(get_data_dir(), validate_only=args.validate_only), indent=2, ensure_ascii=False
+        )
+    )

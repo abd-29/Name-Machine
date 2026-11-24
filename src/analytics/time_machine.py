@@ -7,6 +7,7 @@ from pathlib import Path
 import polars as pl
 
 from config import MAX_YEAR, MIN_YEAR, NAMES_PARQUET
+from src.analytics._data import annual_totals, national_data
 
 
 def _normalize(value: str) -> str:
@@ -19,7 +20,8 @@ def _normalize(value: str) -> str:
 def _vocabulary(path: Path) -> tuple[str, ...]:
     """Return distinct published names."""
     names = (
-        pl.scan_parquet(path)
+        national_data(path)
+        .lazy()
         .select("prenom")
         .drop_nulls()
         .unique()
@@ -57,17 +59,24 @@ def get_history(name: str, sex: int, path: Path = NAMES_PARQUET) -> pl.DataFrame
 
     resolved = _resolve_name(name, path)
     if resolved is None:
-        return pl.scan_parquet(path).head(0).collect()
+        return national_data(path).head(0)
 
     return (
-        pl.scan_parquet(path)
+        national_data(path)
+        .lazy()
         .filter((pl.col("prenom") == resolved) & (pl.col("sexe") == sex))
         .sort("periode")
         .collect()
     )
 
 
-def get_timeline(name: str, sex: int, start: int = MIN_YEAR, end: int = MAX_YEAR, path: Path = NAMES_PARQUET) -> pl.DataFrame:
+def get_timeline(
+    name: str,
+    sex: int,
+    start: int = MIN_YEAR,
+    end: int = MAX_YEAR,
+    path: Path = NAMES_PARQUET,
+) -> pl.DataFrame:
     """Return a yearly timeline, keeping unpublished years as null."""
     if not MIN_YEAR <= start <= end <= MAX_YEAR:
         raise ValueError("Invalid year range")
@@ -87,9 +96,7 @@ def get_statistics(history: pl.DataFrame) -> dict | None:
     if history.is_empty():
         return None
 
-    peak = history.sort(["valeur", "periode"], descending=[True, False]).row(
-        0, named=True
-    )
+    peak = history.sort(["valeur", "periode"], descending=[True, False]).row(0, named=True)
     return {
         "name": peak["prenom"],
         "sex": int(peak["sexe"]),
@@ -119,16 +126,13 @@ def get_year_snapshot(history: pl.DataFrame, year: int) -> dict | None:
 
 def get_relative_history(history: pl.DataFrame, path: Path = NAMES_PARQUET) -> pl.DataFrame:
     """Calculate shares among nationally published birth counts."""
-    totals = (
-        pl.scan_parquet(path)
-        .group_by(["periode", "sexe"])
-        .agg(pl.col("valeur").sum().alias("year_total"))
-        .collect()
+    totals = annual_totals(path).with_columns(
+        pl.col("periode").cast(history.schema["periode"]),
+        pl.col("sexe").cast(history.schema["sexe"]),
     )
 
     return (
         history.join(totals, on=["periode", "sexe"], how="left")
-        .with_columns(
-            (100 * pl.col("valeur") / pl.col("year_total")).alias("share_pct")
-        ).sort("periode")
+        .with_columns((100.0 * pl.col("valeur") / pl.col("year_total")).alias("share_pct"))
+        .sort("periode")
     )

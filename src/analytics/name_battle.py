@@ -1,4 +1,3 @@
-
 """Compare the historical popularity of two first names."""
 
 from pathlib import Path
@@ -6,6 +5,7 @@ from pathlib import Path
 import polars as pl
 
 from config import MAX_YEAR, MIN_YEAR, NAMES_PARQUET
+from src.analytics._data import annual_totals
 from src.analytics.time_machine import get_history
 
 
@@ -21,16 +21,17 @@ def get_battle_timeline(
     """Return yearly counts, ranks and shares for two names."""
     if not MIN_YEAR <= start <= end <= MAX_YEAR:
         raise ValueError("Invalid year range")
+    if sex1 not in (1, 2) or sex2 not in (1, 2):
+        raise ValueError("sex must be 1 or 2")
 
     years = pl.DataFrame({"periode": range(start, end + 1)})
 
     totals = (
-        pl.scan_parquet(path)
+        annual_totals(path)
         .filter(pl.col("periode").is_between(start, end))
         .filter(pl.col("sexe").is_in([sex1, sex2]))
-        .group_by(["periode", "sexe"])
-        .agg(pl.col("valeur").sum().alias("total"))
-        .collect()
+        .rename({"year_total": "total"})
+        .with_columns(pl.col("periode").cast(pl.Int64))
     )
 
     result = years
@@ -40,24 +41,22 @@ def get_battle_timeline(
             get_history(name, sex, path)
             .filter(pl.col("periode").is_between(start, end))
             .select("periode", "valeur", "rang")
+            .with_columns(pl.col("periode").cast(pl.Int64))
         )
 
-        annual_totals = (
-            totals.filter(pl.col("sexe") == sex)
-            .select("periode", "total")
-        )
+        side_totals = totals.filter(pl.col("sexe") == sex).select("periode", "total")
 
         side = (
-            history.join(annual_totals, on="periode", how="left")
-            .with_columns(
-                (100 * pl.col("valeur") / pl.col("total")).alias("share")
+            history.join(side_totals, on="periode", how="left")
+            .with_columns((100.0 * pl.col("valeur") / pl.col("total")).alias("share"))
+            .rename(
+                {
+                    "valeur": f"value_{index}",
+                    "rang": f"rank_{index}",
+                    "total": f"total_{index}",
+                    "share": f"share_{index}",
+                }
             )
-            .rename({
-                "valeur": f"value_{index}",
-                "rang": f"rank_{index}",
-                "total": f"total_{index}",
-                "share": f"share_{index}",
-            })
         )
 
         result = result.join(side, on="periode", how="left")
@@ -104,10 +103,7 @@ def compare_period(timeline: pl.DataFrame, metric: str = "count") -> dict:
     if metric not in ("count", "share"):
         raise ValueError("metric must be 'count' or 'share'")
 
-    common = timeline.filter(
-        pl.col("value_1").is_not_null()
-        & pl.col("value_2").is_not_null()
-    )
+    common = timeline.filter(pl.col("value_1").is_not_null() & pl.col("value_2").is_not_null())
 
     result = {
         "start": timeline["periode"].min(),
@@ -132,9 +128,11 @@ def compare_period(timeline: pl.DataFrame, metric: str = "count") -> dict:
         score1 = 100 * value1 / common["total_1"].sum()
         score2 = 100 * value2 / common["total_2"].sum()
 
-    result.update({
-        "score_1": score1,
-        "score_2": score2,
-        "winner": _winner(score1, score2),
-    })
+    result.update(
+        {
+            "score_1": score1,
+            "score_2": score2,
+            "winner": _winner(score1, score2),
+        }
+    )
     return result

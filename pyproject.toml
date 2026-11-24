@@ -28,7 +28,7 @@ dev = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-v --basetemp=.pytest_tmp"
+addopts = "-v"
 pythonpath = ["."]
 
 [tool.ruff]
